@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCQ Generator with Image Support</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>PDF to MCQ Generator</h1>
+        <p class="subtitle">Generate multiple choice questions with image support and complexity control</p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="messages">
+                    {% for category, message in messages %}
+                        <div class="message message-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" enctype="multipart/form-data" class="upload-form">
+            <div class="form-group">
+                <label for="pdf">Select PDF File:</label>
+                <input type="file" name="pdf" accept=".pdf" required>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="pages">Pages to extract (1-50):</label>
+                    <input type="number" name="pages" min="1" max="50" value="2">
+                </div>
+
+                <div class="form-group">
+                    <label for="questions">Total questions (5-50):</label>
+                    <input type="number" name="questions" id="total-questions" min="5" max="50" value="10" onchange="updateComplexity()">
+                </div>
+            </div>
+
+            <div class="complexity-section">
+                <h3>Question Complexity Distribution</h3>
+                <p class="complexity-info">Total Questions: <span id="question-count">10</span></p>
+
+                <div class="complexity-group">
+                    <div class="complexity-item">
+                        <label for="low-complexity">Easy Questions:</label>
+                        <input type="range" id="low-complexity" name="low_complexity" min="0" max="100" value="40" oninput="updateSliders('low')">
+                        <span class="complexity-display">
+                            <span id="low-count">4</span> questions (<span id="low-percent">40</span>%)
+                        </span>
+                    </div>
+
+                    <div class="complexity-item">
+                        <label for="medium-complexity">Medium Questions:</label>
+                        <input type="range" id="medium-complexity" name="medium_complexity" min="0" max="100" value="40" oninput="updateSliders('medium')">
+                        <span class="complexity-display">
+                            <span id="medium-count">4</span> questions (<span id="medium-percent">40</span>%)
+                        </span>
+                    </div>
+
+                    <div class="complexity-item">
+                        <label for="hard-complexity">Hard Questions:</label>
+                        <input type="range" id="hard-complexity" name="hard_complexity" min="0" max="100" value="20" oninput="updateSliders('hard')">
+                        <span class="complexity-display">
+                            <span id="hard-count">2</span> questions (<span id="hard-percent">20</span>%)
+                        </span>
+                    </div>
+                </div>
+
+                <div class="preset-buttons">
+                    <button type="button" onclick="setPreset('easy')" class="preset-btn">Easy Focus (60-30-10)</button>
+                    <button type="button" onclick="setPreset('balanced')" class="preset-btn">Balanced (35-40-25)</button>
+                    <button type="button" onclick="setPreset('hard')" class="preset-btn">Hard Focus (20-30-50)</button>
+                </div>
+            </div>
+
+            <button type="submit" class="btn-primary">Generate MCQs</button>
+        </form>
+
+        {% if success %}
+        <div class="results">
+            <h2>Generated Files</h2>
+            <div class="results-info">
+                <p><strong>{{ question_count }}</strong> questions generated from <strong>{{ page_count }}</strong> pages</p>
+                {% if image_count > 0 %}
+                    <p><strong>{{ image_count }}</strong> images included in questions</p>
+                {% endif %}
+                {% if complexity_counts %}
+                    <p>Distribution: Easy ({{ complexity_counts.easy }}), Medium ({{ complexity_counts.medium }}), Hard ({{ complexity_counts.hard }})</p>
+                {% endif %}
+            </div>
+            <div class="download-links">
+                <a href="{{ url_for('download_file', filename=mcq_path) }}" class="btn-download">
+                    📄 Download Questions PDF
+                </a>
+                <a href="{{ url_for('download_file', filename=ans_path) }}" class="btn-download">
+                    🔑 Download Answer Key PDF
+                </a>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="features">
+            <h3>Features</h3>
+            <ul>
+                <li>✅ Image extraction and embedding</li>
+                <li>✅ Unicode character support (mathematical symbols)</li>
+                <li>✅ Complexity distribution control</li>
+                <li>✅ Accurate question count generation</li>
+                <li>✅ Clean parsing without answer markers</li>
+                <li>✅ Comprehensive explanations</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        let isUpdating = false;
+
+        function updateSliders(changedSlider) {
+            if (isUpdating) return;
+            isUpdating = true;
+
+            const lowSlider = document.getElementById('low-complexity');
+            const mediumSlider = document.getElementById('medium-complexity');
+            const hardSlider = document.getElementById('hard-complexity');
+
+            let low = parseInt(lowSlider.value);
+            let medium = parseInt(mediumSlider.value);
+            let hard = parseInt(hardSlider.value);
+
+            const total = low + medium + hard;
+
+            if (total !== 100) {
+                const diff = 100 - total;
+
+                if (changedSlider === 'low') {
+                    const remaining = medium + hard;
+                    if (remaining > 0) {
+                        const mediumRatio = medium / remaining;
+                        const hardRatio = hard / remaining;
+                        medium = Math.max(0, Math.round((100 - low) * mediumRatio));
+                        hard = Math.max(0, 100 - low - medium);
+                    } else {
+                        medium = Math.max(0, (100 - low) / 2);
+                        hard = 100 - low - medium;
+                    }
+                } else if (changedSlider === 'medium') {
+                    const remaining = low + hard;
+                    if (remaining > 0) {
+                        const lowRatio = low / remaining;
+                        const hardRatio = hard / remaining;
+                        low = Math.max(0, Math.round((100 - medium) * lowRatio));
+                        hard = Math.max(0, 100 - medium - low);
+                    } else {
+                        low = Math.max(0, (100 - medium) / 2);
+                        hard = 100 - medium - low;
+                    }
+                } else if (changedSlider === 'hard') {
+                    const remaining = low + medium;
+                    if (remaining > 0) {
+                        const lowRatio = low / remaining;
+                        const mediumRatio = medium / remaining;
+                        low = Math.max(0, Math.round((100 - hard) * lowRatio));
+                        medium = Math.max(0, 100 - hard - low);
+                    } else {
+                        low = Math.max(0, (100 - hard) / 2);
+                        medium = 100 - hard - low;
+                    }
+                }
+
+                lowSlider.value = low;
+                mediumSlider.value = medium;
+                hardSlider.value = hard;
+            }
+
+            updateComplexity();
+            isUpdating = false;
+        }
+
+        function updateComplexity() {
+            const totalQuestions = parseInt(document.getElementById('total-questions').value);
+            const low = parseInt(document.getElementById('low-complexity').value);
+            const medium = parseInt(document.getElementById('medium-complexity').value);
+            const hard = parseInt(document.getElementById('hard-complexity').value);
+
+            const lowCount = Math.round(totalQuestions * low / 100);
+            const mediumCount = Math.round(totalQuestions * medium / 100);
+            const hardCount = totalQuestions - lowCount - mediumCount;
+
+            document.getElementById('question-count').textContent = totalQuestions;
+            document.getElementById('low-count').textContent = lowCount;
+            document.getElementById('medium-count').textContent = mediumCount;
+            document.getElementById('hard-count').textContent = Math.max(0, hardCount);
+            document.getElementById('low-percent').textContent = low;
+            document.getElementById('medium-percent').textContent = medium;
+            document.getElementById('hard-percent').textContent = hard;
+        }
+
+        function setPreset(type) {
+            const lowSlider = document.getElementById('low-complexity');
+            const mediumSlider = document.getElementById('medium-complexity');
+            const hardSlider = document.getElementById('hard-complexity');
+
+            switch(type) {
+                case 'easy':
+                    lowSlider.value = 60;
+                    mediumSlider.value = 30;
+                    hardSlider.value = 10;
+                    break;
+                case 'balanced':
+                    lowSlider.value = 35;
+                    mediumSlider.value = 40;
+                    hardSlider.value = 25;
+                    break;
+                case 'hard':
+                    lowSlider.value = 20;
+                    mediumSlider.value = 30;
+                    hardSlider.value = 50;
+                    break;
+            }
+            updateComplexity();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            updateComplexity();
+        });
+    </script>
+</body>
+</html>
